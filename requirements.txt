@@ -1,4 +1,4 @@
 json5
-jsonpath
+jsonpath-rw
 lxml
 cssselect

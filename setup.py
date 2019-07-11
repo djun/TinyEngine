@@ -33,7 +33,7 @@ setup(
     ],
     install_requires=[
         'json5',
-        'jsonpath',
+        'jsonpath-rw',
         'lxml',
         'cssselect',
     ],
