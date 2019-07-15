@@ -8,13 +8,13 @@ import json
 import json5
 from copy import deepcopy
 
-from jsonpath_rw import jsonpath
+import jsonpath_rw as jp
 from lxml.etree import fromstring as et_fromstring
 from lxml.html import fromstring as html_fromstring
 
 from MiniUtils import get_logger
 
-__version__ = "1.1.190711"
+__version__ = "1.0.190715"
 
 
 class TinyEngine:
@@ -25,6 +25,8 @@ class TinyEngine:
     CMD_BREAK = "break"
     CMD_CALLBACK = "callback"
     CMD_ASSERT = "assert"
+    CMD_JSONPATH = "jpath"
+    CMD_XPATH = "xpath"
     CMD_READ = "read"
     CMD_WRITE = "write"
 
@@ -33,8 +35,6 @@ class TinyEngine:
     AFUNC_RE = "re"
     AFUNC_IN = "in"
     AFUNC_PREFER = [AFUNC_RE, AFUNC_IN]
-
-    # TODO jsonpath, xpath
 
     class RerunException(Exception):
         """
@@ -71,34 +71,34 @@ class TinyEngine:
         def __setitem__(self, key, value):
             self._args[key] = value
 
-    def var_replacer(self, v_str, v_prefix=r"$%", v_suffix=r"%$", re_prefix=r"\$\%", re_suffix=r"\%\$"):
-        """
-        Replace string in v_str marked with v_prefix as prefix and v_suffix as suffix.
-        :param v_str: string need proceeded
-        :param v_prefix: prefix of the placeholder
-        :param v_suffix: suffix of the placeholder
-        :param re_prefix:
-        :param re_suffix:
-        :return: string proceeded
-        """
+        def var_replacer(self, v_str, v_prefix=r"$%", v_suffix=r"%$", re_prefix=r"\$\%", re_suffix=r"\%\$"):
+            """
+            Replace string in v_str marked with v_prefix as prefix and v_suffix as suffix.
+            :param v_str: string need proceeded
+            :param v_prefix: prefix of the placeholder
+            :param v_suffix: suffix of the placeholder
+            :param re_prefix:
+            :param re_suffix:
+            :return: string proceeded
+            """
 
-        return self.var_replacer_raw(self.vars, v_str,
-                                     v_prefix=v_prefix, v_suffix=v_suffix, re_prefix=re_prefix,
-                                     re_suffix=re_suffix)
+            return self.var_replacer_raw(self._vars, v_str,
+                                         v_prefix=v_prefix, v_suffix=v_suffix, re_prefix=re_prefix,
+                                         re_suffix=re_suffix)
 
-    @staticmethod
-    def var_replacer_raw(var_dict, v_str, v_prefix=r"$%", v_suffix=r"%$", re_prefix=r"\$\%", re_suffix=r"\%\$"):
-        keys = re.findall(re_prefix + r"(.+?)" + re_suffix, v_str)
-        d_keys = []
-        for i in keys:
-            value = var_dict.get(i)
-            if value is not None:
-                d_keys.append(i)
+        @staticmethod
+        def var_replacer_raw(var_dict, v_str, v_prefix=r"$%", v_suffix=r"%$", re_prefix=r"\$\%", re_suffix=r"\%\$"):
+            keys = re.findall(re_prefix + r"(.+?)" + re_suffix, v_str)
+            d_keys = []
+            for i in keys:
+                value = var_dict.get(i)
+                if value is not None:
+                    d_keys.append(i)
 
-        o_str = deepcopy(v_str)
-        for i in d_keys:
-            o_str = o_str.replace(v_prefix + i + v_suffix, str(var_dict.get(i)))
-        return o_str
+            o_str = deepcopy(v_str)
+            for i in d_keys:
+                o_str = o_str.replace(v_prefix + i + v_suffix, str(var_dict.get(i)))
+            return o_str
 
     def __init__(self, fp=None, script=None, encoding=None, logger=None, args=None, callback=None, **kwargs):
         self._fp = None
@@ -133,9 +133,13 @@ class TinyEngine:
             self.CMD_CALLBACK: self.run_callback,
             # assert: check if the specific value in args.vars is available, and run sub script list if existed
             self.CMD_ASSERT: self.run_assert,
-            # read: read from the specific file
+            # jpath: get values extracted from a variable via jsonpath
+            self.CMD_JSONPATH: self.run_jsonpath,
+            # xpath: get values extracted from a variable via xpath
+            self.CMD_XPATH: self.run_xpath,
+            # read: read from the specific file  TODO
             self.CMD_READ: None,
-            # write: write to the specific file
+            # write: write to the specific file  TODO
             self.CMD_WRITE: None,
         })
         self.AFUNC_MAP = {
@@ -259,11 +263,13 @@ class TinyEngine:
 
         cl = [cargs] if isinstance(cargs, str) else cargs if isinstance(cargs, list) else None
         if cl is not None:
+            print_list = []
             for k in cl:
                 v = args.vars.get(k)
-                logger.info("[{}][{}] {} -> {}".format(self.__class__.__name__,
-                                                       sys._getframe().f_code.co_name,
-                                                       repr(k), repr(v)))
+                print_list.append("{} -> {}".format(repr(k), repr(v)))
+            logger.info("[{}][{}] {}".format(self.__class__.__name__,
+                                             sys._getframe().f_code.co_name,
+                                             ", ".join(print_list)))
 
         return None
 
@@ -365,6 +371,40 @@ class TinyEngine:
             logger.debug("[{}][{}] assert result is True!".format(self.__class__.__name__,
                                                                   sys._getframe().f_code.co_name))
             self.execute_script(csub, args, depth + 1)
+
+        return None
+
+    def run_jsonpath(self, sobj, args, depth=0):
+        logger = self._logger
+        cmd = sobj[0]
+        cargs = sobj[1] if len(sobj) > 1 else None
+        csub = sobj[2] if len(sobj) > 2 else None
+
+        # ['var', 'json_path'], or ['var', 'json_path', 'dest_var']
+        var, jpath = cargs
+        dest_var = cargs[2] if len(cargs) > 2 else var
+
+        value = args.vars.get(var)
+        parser = jp.parse(jpath)
+        result = [match.value for match in parser.find(value)]
+        args.vars[dest_var] = result
+
+        return None
+
+    def run_xpath(self, sobj, args, depth=0):
+        logger = self._logger
+        cmd = sobj[0]
+        cargs = sobj[1] if len(sobj) > 1 else None
+        csub = sobj[2] if len(sobj) > 2 else None
+
+        # ['var', 'xpath'], or ['var', 'xpath', 'dest_var']
+        var, xpath = cargs
+        dest_var = cargs[2] if len(cargs) > 2 else var
+
+        value = args.vars.get(var)
+        et = et_fromstring(value)
+        result = et.xpath(xpath)
+        args.vars[dest_var] = result
 
         return None
 
