@@ -1,0 +1,23 @@
+Metadata-Version: 1.2
+Name: Tiny-Engine
+Version: 0.1
+Summary: A DIY scripting engine supporting most common customizations. The script format in engine is based on Json/Json5 file format.
+Home-page: https://github.com/djunxp/TinyEngine
+Author: DJun
+Author-email: djunxp@gmail.com
+Maintainer: DJun
+Maintainer-email: djunxp@gmail.com
+License: GNU General Public License v3 (GPLv3)
+Description: UNKNOWN
+Platform: all
+Classifier: Development Status :: 4 - Beta
+Classifier: Operating System :: OS Independent
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: Implementation
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Programming Language :: Python :: 3.5
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Topic :: Software Development :: Libraries
