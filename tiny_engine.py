@@ -24,6 +24,7 @@ class TinyEngine:
     CMD_ASSIGN = "assign"
     CMD_PRINT = "print"
     CMD_MSG = "msg"
+    CMD_CALL = "call"
     CMD_RERUN = "rerun"
     CMD_BREAK = "break"
     CMD_CALLBACK = "callback"
@@ -34,6 +35,8 @@ class TinyEngine:
     CMD_WRITE = "write"
     CMD_APPEND = "append"
 
+    ARG_FILE_NAME = "file_name"
+    ARG_ENCODING = "encoding"
     ARG_VAR = "var"
 
     AFUNC_RE = "re"
@@ -133,6 +136,8 @@ class TinyEngine:
             self.CMD_PRINT: self.run_print,
             # print: print message on screen with logging
             self.CMD_MSG: self.run_msg,
+            # call: flow control - call a sub script list named in vars
+            self.CMD_CALL: self.run_call,
             # rerun: flow control - rerun from the first node of the current script list
             self.CMD_RERUN: self.run_except,
             # rerun: flow control - break out from the current script list
@@ -145,12 +150,12 @@ class TinyEngine:
             self.CMD_JSONPATH: self.run_jsonpath,
             # xpath: get values extracted from a variable via xpath
             self.CMD_XPATH: self.run_xpath,
-            # read: read from the specific file with specific encoding  TODO
-            self.CMD_READ: None,
-            # write: write to the specific file with specific encoding  TODO
-            self.CMD_WRITE: None,
-            # append: append to the specific file with specific encoding  TODO
-            self.CMD_APPEND: None,
+            # read: read from the specific file with specific encoding
+            self.CMD_READ: self.run_read,
+            # write: write to the specific file with specific encoding
+            self.CMD_WRITE: self.run_write,
+            # append: append to the specific file with specific encoding
+            self.CMD_APPEND: self.run_write,
         })
         self.AFUNC_MAP = {
             self.AFUNC_RE: self.afunc_re,
@@ -278,14 +283,14 @@ class TinyEngine:
                     vars[k] = vars[v]
                     logger.info("[{}][{}] assignment ({} <- {})".format(self.__class__.__name__,
                                                                         sys._getframe().f_code.co_name,
-                                                                        k, v))
+                                                                        repr(k), repr(v)))
                     logger.debug("[{}][{}] (value of {}: {}))".format(self.__class__.__name__,
                                                                       sys._getframe().f_code.co_name,
-                                                                      v, repr(vars[v])))
+                                                                      repr(v), repr(vars[v])))
                 else:
                     logger.info("[{}][{}] assign failed! ({} is not existed in vars)".format(self.__class__.__name__,
                                                                                              sys._getframe().f_code.co_name,
-                                                                                             v))
+                                                                                             repr(v)))
 
     def run_print(self, sobj, args, depth=0):
         logger = self._logger
@@ -315,6 +320,28 @@ class TinyEngine:
         logger.info("[{}][{}] {}".format(self.__class__.__name__,
                                          sys._getframe().f_code.co_name,
                                          str(msg)))
+
+        return None
+
+    def run_call(self, sobj, args, depth=0):
+        logger = self._logger
+        cmd = sobj[0]
+        cargs = sobj[1] if len(sobj) > 1 else None
+        csub = sobj[2] if len(sobj) > 2 else None
+
+        cl = [cargs] if isinstance(cargs, str) else cargs if isinstance(cargs, list) else None
+        if cl is not None:
+            for k in cl:
+                v = args.vars.get(k)
+                if isinstance(v, list):
+                    logger.info("[{}][{}] calling sub script list {}...".format(self.__class__.__name__,
+                                                                                sys._getframe().f_code.co_name,
+                                                                                repr(k)))
+                    sub_sobj = v
+                    self.execute_script(sub_sobj, args, depth + 1)
+                else:
+                    logger.info("[{}][{}] {} is not a sub script list!".format(self.__class__.__name__,
+                                                                               sys._getframe().f_code.co_name, repr(k)))
 
         return None
 
@@ -440,6 +467,55 @@ class TinyEngine:
 
         return None
 
+    def run_read(self, sobj, args, depth=0):
+        logger = self._logger
+        cmd = sobj[0]
+        cargs = sobj[1] if len(sobj) > 1 else None
+        csub = sobj[2] if len(sobj) > 2 else None
+
+        v = None
+        if isinstance(cargs, dict):
+            file_name = cargs.get(self.ARG_FILE_NAME)
+            encoding = cargs.get(self.ARG_ENCODING)
+            encoding = encoding if encoding is not None else self._data_encoding
+            var = cargs.get(self.ARG_VAR)
+            if None not in {file_name, var}:
+                with open(file_name, "r", encoding=encoding) as fp:
+                    # TODO auto load as json object?
+                    args.vars[var] = fp.read()
+                    logger.info("[{}][{}] file content of {} is loaded into variable {}".format(self.__class__.__name__,
+                                                                                       sys._getframe().f_code.co_name,
+                                                                                       repr(file_name), repr(var)))
+            else:
+                raise RuntimeError("'file_name' or 'var' is not valid!")
+
+        return None
+
+    def run_write(self, sobj, args, depth=0):
+        logger = self._logger
+        cmd = sobj[0]
+        cargs = sobj[1] if len(sobj) > 1 else None
+        csub = sobj[2] if len(sobj) > 2 else None
+
+        v = None
+        if isinstance(cargs, dict):
+            file_name = cargs.get(self.ARG_FILE_NAME)
+            encoding = cargs.get(self.ARG_ENCODING)
+            encoding = encoding if encoding is not None else self._data_encoding
+            var = cargs.get(self.ARG_VAR)
+            if None not in {file_name, var}:
+                mode = "a" if cmd == self.CMD_APPEND else "w"
+                with open(file_name, mode, encoding=encoding) as fp:
+                    # TODO auto dump as json string?
+                    fp.write(args.vars[var])
+                    logger.info("[{}][{}] value of variable {} is written into file {}".format(self.__class__.__name__,
+                                                                                       sys._getframe().f_code.co_name,
+                                                                                       repr(var), repr(file_name)))
+            else:
+                raise RuntimeError("'file_name' or 'var' is not valid!")
+
+        return None
+
 
 if __name__ == "__main__":
     # TODO For debugging
@@ -447,6 +523,8 @@ if __name__ == "__main__":
     [
         ['msg', 'part 1'],
         ['vars', { a: 1, b: 2, c: 'hello world!', d: { xxx: 1, yyy: 2, zzz: 'hey!' } }],
+        ['vars', { test_call: [ ['print', 'a'] ] }],
+        ['call', 'test_call'],
         ['msg', 'part 2'],
         ['print', ['a', 'b']],
         ['print', ['d']],
