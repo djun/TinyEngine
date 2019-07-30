@@ -14,11 +14,14 @@ from lxml.html import fromstring as html_fromstring
 
 from MiniUtils import get_logger
 
-__version__ = "1.0.190715"
+__version__ = "1.0.190730"
 
 
 class TinyEngine:
+    DEFAULT_ENCODING = 'utf-8'
+
     CMD_VARS = "vars"
+    CMD_ASSIGN = "assign"
     CMD_PRINT = "print"
     CMD_MSG = "msg"
     CMD_RERUN = "rerun"
@@ -29,6 +32,7 @@ class TinyEngine:
     CMD_XPATH = "xpath"
     CMD_READ = "read"
     CMD_WRITE = "write"
+    CMD_APPEND = "append"
 
     ARG_VAR = "var"
 
@@ -100,10 +104,12 @@ class TinyEngine:
                 o_str = o_str.replace(v_prefix + i + v_suffix, str(var_dict.get(i)))
             return o_str
 
-    def __init__(self, fp=None, script=None, encoding=None, logger=None, args=None, callback=None, **kwargs):
+    def __init__(self, fp=None, script=None, encoding=None, data_encoding=None, logger=None, args=None, callback=None,
+                 **kwargs):
         self._fp = None
         self._script = None
         self._encoding = None
+        self._data_encoding = data_encoding if data_encoding is not None else self.DEFAULT_ENCODING
 
         self._logger = logger or get_logger()
         self._args = args or self.Args()
@@ -121,6 +127,8 @@ class TinyEngine:
         self.register_runners({
             # vars: quickly store values of variables in args.vars
             self.CMD_VARS: self.run_vars,
+            # assign: quickly assign value to variable from each other variables in args.vars
+            self.CMD_ASSIGN: self.run_assign,
             # print: print values of variables on screen with logging
             self.CMD_PRINT: self.run_print,
             # print: print message on screen with logging
@@ -137,10 +145,12 @@ class TinyEngine:
             self.CMD_JSONPATH: self.run_jsonpath,
             # xpath: get values extracted from a variable via xpath
             self.CMD_XPATH: self.run_xpath,
-            # read: read from the specific file  TODO
+            # read: read from the specific file with specific encoding  TODO
             self.CMD_READ: None,
-            # write: write to the specific file  TODO
+            # write: write to the specific file with specific encoding  TODO
             self.CMD_WRITE: None,
+            # append: append to the specific file with specific encoding  TODO
+            self.CMD_APPEND: None,
         })
         self.AFUNC_MAP = {
             self.AFUNC_RE: self.afunc_re,
@@ -254,6 +264,28 @@ class TinyEngine:
             logger.debug("[{}][{}] vars updated! ({})".format(self.__class__.__name__,
                                                               sys._getframe().f_code.co_name,
                                                               len(cargs)))
+
+    def run_assign(self, sobj, args, depth=0):
+        logger = self._logger
+        cmd = sobj[0]
+        cargs = sobj[1] if len(sobj) > 1 else None
+        csub = sobj[2] if len(sobj) > 2 else None
+
+        if isinstance(cargs, dict):
+            vars = args.vars
+            for k, v in cargs.items():
+                if v in vars:
+                    vars[k] = vars[v]
+                    logger.info("[{}][{}] assignment ({} <- {})".format(self.__class__.__name__,
+                                                                        sys._getframe().f_code.co_name,
+                                                                        k, v))
+                    logger.debug("[{}][{}] (value of {}: {}))".format(self.__class__.__name__,
+                                                                      sys._getframe().f_code.co_name,
+                                                                      v, repr(vars[v])))
+                else:
+                    logger.info("[{}][{}] assign failed! ({} is not existed in vars)".format(self.__class__.__name__,
+                                                                                             sys._getframe().f_code.co_name,
+                                                                                             v))
 
     def run_print(self, sobj, args, depth=0):
         logger = self._logger
@@ -414,9 +446,12 @@ if __name__ == "__main__":
     script = r"""
     [
         ['msg', 'part 1'],
-        ['vars', { a: 1, b: 2, c: 'hello world!', }],
+        ['vars', { a: 1, b: 2, c: 'hello world!', d: { xxx: 1, yyy: 2, zzz: 'hey!' } }],
         ['msg', 'part 2'],
         ['print', ['a', 'b']],
+        ['print', ['d']],
+        ['assign', { e: 'd' }],
+        ['print', ['e']],
         ['assert', 'a', ['print', 'a'] ],
         ['assert', 'b', ['print', ['b']] ],
         ['assert', 'c', [ ['print', ['c']]] ],
