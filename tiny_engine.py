@@ -20,8 +20,8 @@ __version__ = "1.0.190731"
 class TinyEngine:
     DEFAULT_ENCODING = 'utf-8'
 
-    CMD_VARS = "vars"
-    CMD_ASSIGN = "assign"
+    CMD_VARS_ = "vars_"
+    CMD_ASSIGN_ = "assign_"
     CMD_PRINT = "print"
     CMD_MSG = "msg"
     CMD_CALL = "call"
@@ -29,14 +29,13 @@ class TinyEngine:
     CMD_BREAK = "break"
     CMD_CALLBACK = "callback"
     CMD_ASSERT = "assert"
+    CMD_ASSERT_ = "assert_"
     CMD_JSONPATH = "jpath"
     CMD_XPATH = "xpath"
     CMD_READ = "read"
     CMD_WRITE = "write"
     CMD_APPEND = "append"
 
-    ARG_FILE_NAME = "file_name"
-    ARG_ENCODING = "encoding"
     ARG_VAR = "var"
 
     AFUNC_RE = "re"
@@ -129,9 +128,9 @@ class TinyEngine:
         self._cmd_runners = {}
         self.register_runners({
             # vars: quickly store values of variables in args.vars
-            self.CMD_VARS: self.run_vars,
+            self.CMD_VARS_: self.run_vars_d,
             # assign: quickly assign value to variable from each other variables in args.vars
-            self.CMD_ASSIGN: self.run_assign,
+            self.CMD_ASSIGN_: self.run_assign_d,
             # print: print values of variables on screen with logging
             self.CMD_PRINT: self.run_print,
             # print: print message on screen with logging
@@ -146,6 +145,7 @@ class TinyEngine:
             self.CMD_CALLBACK: self.run_callback,
             # assert: check if the specific value in args.vars is available, and run sub script list if existed
             self.CMD_ASSERT: self.run_assert,
+            self.CMD_ASSERT_: self.run_assert_d,
             # jpath: get values extracted from a variable via jsonpath
             self.CMD_JSONPATH: self.run_jsonpath,
             # xpath: get values extracted from a variable via xpath
@@ -257,7 +257,7 @@ class TinyEngine:
                             rerun_requested = True
         return None
 
-    def run_vars(self, sobj, args, depth=0):
+    def run_vars_d(self, sobj, args, depth=0):
         logger = self._logger
         cmd = sobj[0]
         cargs = sobj[1] if len(sobj) > 1 else None
@@ -270,7 +270,7 @@ class TinyEngine:
                                                               sys._getframe().f_code.co_name,
                                                               len(cargs)))
 
-    def run_assign(self, sobj, args, depth=0):
+    def run_assign_d(self, sobj, args, depth=0):
         logger = self._logger
         cmd = sobj[0]
         cargs = sobj[1] if len(sobj) > 1 else None
@@ -381,34 +381,53 @@ class TinyEngine:
         csub = sobj[2] if len(sobj) > 2 else None
 
         assert_result = True
+        var = cargs
+        var = var[0] if isinstance(var, list) else var
+        afunc_name = cargs[1] if len(cargs) > 1 else ''
+        afargs = cargs[2] if len(cargs) > 2 else None
+        afunc = self.AFUNC_MAP.get(afunc_name)
+
+        logger.debug("[{}][{}] proceeding{}...".format(self.__class__.__name__,
+                                                       sys._getframe().f_code.co_name,
+                                                       ' ' + afunc_name if afunc_name else ''))
+        v = args.vars[var]
+        assert_result = afunc(v, afargs) if afunc is not None else (True if v else False)
+
+        if assert_result and csub:
+            logger.debug("[{}][{}] assert result is True!".format(self.__class__.__name__,
+                                                                  sys._getframe().f_code.co_name))
+            self.execute_script(csub, args, depth + 1)
+
+        return None
+
+    def run_assert_d(self, sobj, args, depth=0):
+        logger = self._logger
+        cmd = sobj[0]
+        cargs = sobj[1] if len(sobj) > 1 else None
+        csub = sobj[2] if len(sobj) > 2 else None
+
+        assert_result = True
         var = None
         v = None
         afunc = None
         afunc_name = ''
-        if isinstance(cargs, dict):
-            var = cargs.get(self.ARG_VAR)
-            if var is not None:
-                if isinstance(var, str):
-                    var = [var]
-                if not isinstance(var, list):
-                    raise RuntimeError("'var' is not valid!")
+        var = cargs.get(self.ARG_VAR)
+        if var is not None:
+            if isinstance(var, str):
+                var = [var]
+            if not isinstance(var, list):
+                raise RuntimeError("'var' is not valid!")
 
-                v = [args.vars.get(i) for i in var]
-                for af in self.AFUNC_PREFER:
-                    if af in cargs:
-                        afunc_name = af
-                        afunc = self.AFUNC_MAP.get(af)
-                        break
-                else:
-                    logger.debug("[{}][{}] will have no effects on var {}".format(self.__class__.__name__,
-                                                                                  sys._getframe().f_code.co_name,
-                                                                                  repr(var)))
-        elif isinstance(cargs, list):
-            var = cargs
             v = [args.vars.get(i) for i in var]
-        elif isinstance(cargs, str):
-            var = [cargs]
-            v = [args.vars.get(i) for i in var]
+            for af in self.AFUNC_PREFER:
+                if af in cargs:
+                    afunc_name = af
+                    afunc = self.AFUNC_MAP.get(af)
+                    break
+            else:
+                logger.debug("[{}][{}] will have no effects on var {}".format(self.__class__.__name__,
+                                                                              sys._getframe().f_code.co_name,
+                                                                              repr(var)))
 
         logger.debug("[{}][{}] proceeding{}...".format(self.__class__.__name__,
                                                        sys._getframe().f_code.co_name,
@@ -473,29 +492,24 @@ class TinyEngine:
         cargs = sobj[1] if len(sobj) > 1 else None
         csub = sobj[2] if len(sobj) > 2 else None
 
-        v = None
-        if isinstance(cargs, dict):
-            file_name = cargs.get(self.ARG_FILE_NAME)
-            encoding = cargs.get(self.ARG_ENCODING)
-            encoding = encoding if encoding is not None else self._data_encoding
-            var = cargs.get(self.ARG_VAR)
-            if None not in {file_name, var}:
-                with open(file_name, "r", encoding=encoding) as fp:
-                    content = fp.read()
-                    try:
-                        # Auto load as JSON object
-                        content = json.loads(content)
-                        logger.debug("[{}][{}] (converted to JSON object)".format(self.__class__.__name__,
-                                                                                  sys._getframe().f_code.co_name))
-                    except:
-                        pass
-                    args.vars[var] = content
-                    logger.info("[{}][{}] file content of {} is loaded into variable {}".format(self.__class__.__name__,
-                                                                                                sys._getframe().f_code.co_name,
-                                                                                                repr(file_name),
-                                                                                                repr(var)))
-            else:
-                raise RuntimeError("'file_name' or 'var' is not valid!")
+        # ['var', 'file_name'], or ['var', 'file_name', 'encoding']
+        var, file_name = cargs
+        encoding = cargs[2] if len(cargs) > 2 else self._data_encoding
+
+        with open(file_name, "r", encoding=encoding) as fp:
+            content = fp.read()
+            try:
+                # Auto load as JSON object
+                content = json.loads(content)
+                logger.debug("[{}][{}] (converted to JSON object)".format(self.__class__.__name__,
+                                                                          sys._getframe().f_code.co_name))
+            except:
+                pass
+            args.vars[var] = content
+            logger.info("[{}][{}] file content of {} is loaded into variable {}".format(self.__class__.__name__,
+                                                                                        sys._getframe().f_code.co_name,
+                                                                                        repr(file_name),
+                                                                                        repr(var)))
 
         return None
 
@@ -505,30 +519,25 @@ class TinyEngine:
         cargs = sobj[1] if len(sobj) > 1 else None
         csub = sobj[2] if len(sobj) > 2 else None
 
-        v = None
-        if isinstance(cargs, dict):
-            file_name = cargs.get(self.ARG_FILE_NAME)
-            encoding = cargs.get(self.ARG_ENCODING)
-            encoding = encoding if encoding is not None else self._data_encoding
-            var = cargs.get(self.ARG_VAR)
-            if None not in {file_name, var}:
-                mode = "a" if cmd == self.CMD_APPEND else "w"
-                with open(file_name, mode, encoding=encoding) as fp:
-                    content = args.vars[var]
-                    try:
-                        # Auto dump as JSON string
-                        content = json.dumps(content, ensure_ascii=False, sort_keys=True, indent=2)
-                        logger.debug("[{}][{}] (converted to JSON string)".format(self.__class__.__name__,
-                                                                                  sys._getframe().f_code.co_name))
-                    except:
-                        pass
-                    fp.write(content)
-                    logger.info("[{}][{}] value of variable {} is written into file {}".format(self.__class__.__name__,
-                                                                                               sys._getframe().f_code.co_name,
-                                                                                               repr(var),
-                                                                                               repr(file_name)))
-            else:
-                raise RuntimeError("'file_name' or 'var' is not valid!")
+        # ['var', 'file_name'], or ['var', 'file_name', 'encoding']
+        var, file_name = cargs
+        encoding = cargs[2] if len(cargs) > 2 else self._data_encoding
+
+        mode = "a" if cmd == self.CMD_APPEND else "w"
+        with open(file_name, mode, encoding=encoding) as fp:
+            content = args.vars[var]
+            try:
+                # Auto dump as JSON string
+                content = json.dumps(content, ensure_ascii=False, sort_keys=True, indent=2)
+                logger.debug("[{}][{}] (converted to JSON string)".format(self.__class__.__name__,
+                                                                          sys._getframe().f_code.co_name))
+            except:
+                pass
+            fp.write(content)
+            logger.info("[{}][{}] value of variable {} is written into file {}".format(self.__class__.__name__,
+                                                                                       sys._getframe().f_code.co_name,
+                                                                                       repr(var),
+                                                                                       repr(file_name)))
 
         return None
 
@@ -538,24 +547,29 @@ if __name__ == "__main__":
     script = r"""
     [
         ['msg', 'part 1'],
-        ['vars', { a: 1, b: 2, c: 'hello world!', d: { xxx: 1, yyy: 2, zzz: 'hey!' } }],
-        ['vars', { test_call: [ ['print', 'a'] ] }],
+        ['vars_', { a: 1, b: 2, c: 'hello world!', d: { xxx: 1, yyy: 2, zzz: 'hey!' } }],
+        ['vars_', { test_call: [ ['print', 'a'] ] }],
         ['call', 'test_call'],
         ['msg', 'testing file operations...'],
-        ['write', { file_name: 'test.json', var: 'd' } ],
-        ['read', { file_name: 'test.json', var: 'g' } ],
+        ['write', [ 'd', 'test.json' ]],
+        ['read', [ 'g', 'test.json' ]],
         ['print', 'g'],
+        ['append', [ 'c', 'test.json' ]],
+        ['read', [ 'h', 'test.json' ]],
+        ['print', 'h'],
         ['msg', 'part 2'],
         ['print', ['a', 'b']],
         ['print', ['d']],
-        ['assign', { e: 'd' }],
+        ['assign_', { e: 'd' }],
         ['print', ['e']],
         ['assert', 'a', ['print', 'a'] ],
         ['assert', 'b', ['print', ['b']] ],
         ['assert', 'c', [ ['print', ['c']]] ],
         ['msg', 'part 3'],
-        ['assert', ['a', 'b', 'c'], ['print', 'c'] ],
-        ['assert', { 'var': 'c', 're': 'hello', }, ['print', 'c']],
+        ['assert', 'a', ['msg', 'assert 1, successfully!'] ],
+        ['assert', ['c', 're', 'hello'], ['msg', 'assert 2, successfully!']],
+        ['assert_', { var: ['a', 'b', 'c'] }, ['msg', 'assert 3, successfully!'] ],
+        ['assert_', { var: ['c', 'h'], re: 'hello' }, ['msg', 'assert 4, successfully!'] ],
     ]
     """
     t = TinyEngine(script=script)
