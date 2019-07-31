@@ -14,7 +14,7 @@ from lxml.html import fromstring as html_fromstring
 
 from MiniUtils import get_logger
 
-__version__ = "1.0.190730"
+__version__ = "1.0.190731"
 
 
 class TinyEngine:
@@ -481,11 +481,19 @@ class TinyEngine:
             var = cargs.get(self.ARG_VAR)
             if None not in {file_name, var}:
                 with open(file_name, "r", encoding=encoding) as fp:
-                    # TODO auto load as json object?
-                    args.vars[var] = fp.read()
+                    content = fp.read()
+                    try:
+                        # Auto load as JSON object
+                        content = json.loads(content)
+                        logger.debug("[{}][{}] (converted to JSON object)".format(self.__class__.__name__,
+                                                                                  sys._getframe().f_code.co_name))
+                    except:
+                        pass
+                    args.vars[var] = content
                     logger.info("[{}][{}] file content of {} is loaded into variable {}".format(self.__class__.__name__,
-                                                                                       sys._getframe().f_code.co_name,
-                                                                                       repr(file_name), repr(var)))
+                                                                                                sys._getframe().f_code.co_name,
+                                                                                                repr(file_name),
+                                                                                                repr(var)))
             else:
                 raise RuntimeError("'file_name' or 'var' is not valid!")
 
@@ -506,11 +514,19 @@ class TinyEngine:
             if None not in {file_name, var}:
                 mode = "a" if cmd == self.CMD_APPEND else "w"
                 with open(file_name, mode, encoding=encoding) as fp:
-                    # TODO auto dump as json string?
-                    fp.write(args.vars[var])
+                    content = args.vars[var]
+                    try:
+                        # Auto dump as JSON string
+                        content = json.dumps(content, ensure_ascii=False, sort_keys=True, indent=2)
+                        logger.debug("[{}][{}] (converted to JSON string)".format(self.__class__.__name__,
+                                                                                  sys._getframe().f_code.co_name))
+                    except:
+                        pass
+                    fp.write(content)
                     logger.info("[{}][{}] value of variable {} is written into file {}".format(self.__class__.__name__,
-                                                                                       sys._getframe().f_code.co_name,
-                                                                                       repr(var), repr(file_name)))
+                                                                                               sys._getframe().f_code.co_name,
+                                                                                               repr(var),
+                                                                                               repr(file_name)))
             else:
                 raise RuntimeError("'file_name' or 'var' is not valid!")
 
@@ -525,6 +541,10 @@ if __name__ == "__main__":
         ['vars', { a: 1, b: 2, c: 'hello world!', d: { xxx: 1, yyy: 2, zzz: 'hey!' } }],
         ['vars', { test_call: [ ['print', 'a'] ] }],
         ['call', 'test_call'],
+        ['msg', 'testing file operations...'],
+        ['write', { file_name: 'test.json', var: 'd' } ],
+        ['read', { file_name: 'test.json', var: 'g' } ],
+        ['print', 'g'],
         ['msg', 'part 2'],
         ['print', ['a', 'b']],
         ['print', ['d']],
