@@ -22,9 +22,11 @@
         // tokenKey
         ["vars_", { url: "$%url_itsmweb%acc/tokenKey" }],
         ["get_", { var: "token_data", url: "url" }],
-        // TODO do jpath, save to statusCode, message
+        ["jpath", ["token_data", "$.statusCode", "statusCode"]],
+        ["jpath", ["token_data", "$.message", "message"]],
         ["assert", ["statusCode", "in", ["200"]], [
-            // TODO do jpath, save to attributeMap/tokenKey, attributeMap/userKey
+            ["jpath", ["token_data", "$.attributeMap.tokenKey", "tokenKey"]],
+            ["jpath", ["token_data", "$.attributeMap.userKey", "userKey"]]
         ]],
         // TODO getAesString(loginName, tokenKey, tokenKey) -> enUserName
         // TODO getAesString(loginPwd, tokenKey, tokenKey) -> enPwd
@@ -34,22 +36,26 @@
         ["post_", { var: "result_data", url: "url", data: [
             "redirectURL", "smsVerificationCode", "staffId", "uuidAcc", "loginType", "enUserName", "enPwd", "userKey"
         ] }],
-        // TODO do jpath, save to statusCode, message
+        ["jpath", ["result_data", "$.statusCode", "statusCode"]],
+        ["jpath", ["result_data", "$.message", "message"]],
         ["assert", ["statusCode", "in", ["200"]], [
-            // TODO do jpath, save to forwardUrl, loginMsg
+            ["jpath", ["result_data", "$.forwardUrl", "forwardUrl"]],
+            ["jpath", ["result_data", "$.loginMsg", "loginMsg"]],
             ["vars_", { url: "$%url_itsmweb%$$%forwardUrl%$" }],
             ["get_", { var: "page_src", url: "url" }],
             // TODO do verify(), and finish
             ["finish"]
         ]],
         ["assert", ["statusCode", "in", ["301"]], [
-            // TODO do jpath, save to forwardUrl, attributeMap/loginType
+            ["jpath", ["result_data", "$.forwardUrl", "forwardUrl"]],
+            ["jpath", ["result_data", "$.attributeMap.loginType", "loginType"]],
             ["vars_", { url: "$%url_itsmweb%$$%forwardUrl%$" }],
 
             // TODO call get_sms_author_code() -> sms_data
-            // TODO do jpath, save to statusCode, message
+            ["jpath", ["sms_data", "$.statusCode", "statusCode"]],
+            ["jpath", ["sms_data", "$.message", "message"]],
             ["assert", ["statusCode", "in", ["200"]], [
-                // TODO do jpath, save to uuidAcc (attributeMap/theUuid)
+                ["jpath", ["sms_data", "$.attributeMap.theUuid", "uuidAcc"]],
                 // TODO do change state to STATE_WAITING
                 ["callback"],
                 // TODO do queue.get(timeout) -> sms
