@@ -1,0 +1,69 @@
+[
+    [
+        "vars_",
+        {
+            // basic info
+            loginName: "dingyuanj", loginPwd: "xxxxxxxxx",
+            url_itsmweb: "http://132.121.91.36:9011/itsm/",
+
+            // post data
+            redirectURL: "", smsVerificationCode: "",
+            staffId: "", uuidAcc: "", loginType: "",
+            enUserName: "", enPwd: "",
+            userKey: "", tokenKey: "",
+        }
+    ],
+    // TODO vars_: getAesString, get_sms_author_code
+
+    // login process begin!
+    ["vars_", { sms_verify_times: 0, url: "$%url_itsmweb%$index" }],
+    ["get_", { url: "url" }],
+    [
+        // tokenKey
+        ["vars_", { url: "$%url_itsmweb%acc/tokenKey" }],
+        ["get_", { var: "token_data", url: "url" }],
+        // TODO do jpath, save to statusCode, message
+        ["assert", ["statusCode", "in", ["200"]], [
+            // TODO do jpath, save to attributeMap/tokenKey, attributeMap/userKey
+        ]],
+        // TODO getAesString(loginName, tokenKey, tokenKey) -> enUserName
+        // TODO getAesString(loginPwd, tokenKey, tokenKey) -> enPwd
+
+        // login.json
+        ["vars_", { url: "$%url_itsmweb%$acc/login.json" }],
+        ["post_", { var: "result_data", url: "url", data: [
+            "redirectURL", "smsVerificationCode", "staffId", "uuidAcc", "loginType", "enUserName", "enPwd", "userKey"
+        ] }],
+        // TODO do jpath, save to statusCode, message
+        ["assert", ["statusCode", "in", ["200"]], [
+            // TODO do jpath, save to forwardUrl, loginMsg
+            ["vars_", { url: "$%url_itsmweb%$$%forwardUrl%$" }],
+            ["get_", { var: "page_src", url: "url" }],
+            // TODO do verify(), and finish
+            ["finish"]
+        ]],
+        ["assert", ["statusCode", "in", ["301"]], [
+            // TODO do jpath, save to forwardUrl, attributeMap/loginType
+            ["vars_", { url: "$%url_itsmweb%$$%forwardUrl%$" }],
+
+            // TODO call get_sms_author_code() -> sms_data
+            // TODO do jpath, save to statusCode, message
+            ["assert", ["statusCode", "in", ["200"]], [
+                // TODO do jpath, save to uuidAcc (attributeMap/theUuid)
+                // TODO do change state to STATE_WAITING
+                ["callback"],
+                // TODO do queue.get(timeout) -> sms
+                // TODO do change state to STATE_PROCEEDING
+                ["callback"],
+                ["assert", ["sms", "in", ["#"]], [
+                    // TODO if sms_verify_times >= sms_verify_less_than_times: break
+                    // TODO sms_verify_times += 1
+                    ["break"]
+                ]],
+                ["assign_", { smsVerificationCode: "sms" }]
+            ]]
+        ]],
+        ["rerun"]
+    ]
+    // login process end!
+]

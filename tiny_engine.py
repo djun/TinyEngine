@@ -27,6 +27,7 @@ class TinyEngine:
     CMD_CALL = "call"
     CMD_RERUN = "rerun"
     CMD_BREAK = "break"
+    CMD_FINISH = "finish"
     CMD_CALLBACK = "callback"
     CMD_ASSERT = "assert"
     CMD_ASSERT_ = "assert_"
@@ -53,6 +54,14 @@ class TinyEngine:
     class BreakException(Exception):
         """
         For flow controlling - Break
+        """
+
+        def __init__(self, *args, **kwargs):
+            Exception.__init__(self, *args, **kwargs)
+
+    class FinishException(Exception):
+        """
+        For flow controlling - Finish
         """
 
         def __init__(self, *args, **kwargs):
@@ -121,6 +130,7 @@ class TinyEngine:
         self._exceptions_map = {
             self.CMD_RERUN: self.RerunException,
             self.CMD_BREAK: self.BreakException,
+            self.CMD_FINISH: self.FinishException,
         }
 
         # basis functional runners for nodes in the flow
@@ -141,6 +151,8 @@ class TinyEngine:
             self.CMD_RERUN: self.run_except,
             # rerun: flow control - break out from the current script list
             self.CMD_BREAK: self.run_except,
+            # rerun: flow control - finish all script lists
+            self.CMD_FINISH: self.run_except,
             # callback: call to a callback if set
             self.CMD_CALLBACK: self.run_callback,
             # assert: check if the specific value in args.vars is available, and run sub script list if existed
@@ -255,6 +267,10 @@ class TinyEngine:
                                 self.execute_script(sub_sobj, args, depth + 1)
                         except self.RerunException:
                             rerun_requested = True
+                        except self.BreakException:
+                            pass
+                        except self.FinishException as f_exp:
+                            raise f_exp
         return None
 
     def run_vars_d(self, sobj, args, depth=0):
@@ -263,12 +279,11 @@ class TinyEngine:
         cargs = sobj[1] if len(sobj) > 1 else None
         csub = sobj[2] if len(sobj) > 2 else None
 
-        if isinstance(cargs, dict):
-            vars = args.vars
-            vars.update(cargs)
-            logger.debug("[{}][{}] vars updated! ({})".format(self.__class__.__name__,
-                                                              sys._getframe().f_code.co_name,
-                                                              len(cargs)))
+        vars = args.vars
+        vars.update(cargs)
+        logger.debug("[{}][{}] vars updated! ({})".format(self.__class__.__name__,
+                                                          sys._getframe().f_code.co_name,
+                                                          len(cargs)))
 
     def run_assign_d(self, sobj, args, depth=0):
         logger = self._logger
@@ -276,21 +291,20 @@ class TinyEngine:
         cargs = sobj[1] if len(sobj) > 1 else None
         csub = sobj[2] if len(sobj) > 2 else None
 
-        if isinstance(cargs, dict):
-            vars = args.vars
-            for k, v in cargs.items():
-                if v in vars:
-                    vars[k] = vars[v]
-                    logger.info("[{}][{}] assignment ({} <- {})".format(self.__class__.__name__,
-                                                                        sys._getframe().f_code.co_name,
-                                                                        repr(k), repr(v)))
-                    logger.debug("[{}][{}] (value of {}: {}))".format(self.__class__.__name__,
-                                                                      sys._getframe().f_code.co_name,
-                                                                      repr(v), repr(vars[v])))
-                else:
-                    logger.info("[{}][{}] assign failed! ({} is not existed in vars)".format(self.__class__.__name__,
-                                                                                             sys._getframe().f_code.co_name,
-                                                                                             repr(v)))
+        vars = args.vars
+        for k, v in cargs.items():
+            if v in vars:
+                vars[k] = vars[v]
+                logger.info("[{}][{}] assignment ({} <- {})".format(self.__class__.__name__,
+                                                                    sys._getframe().f_code.co_name,
+                                                                    repr(k), repr(v)))
+                logger.debug("[{}][{}] (value of {}: {}))".format(self.__class__.__name__,
+                                                                  sys._getframe().f_code.co_name,
+                                                                  repr(v), repr(vars[v])))
+            else:
+                logger.info("[{}][{}] assign failed! ({} is not existed in vars)".format(self.__class__.__name__,
+                                                                                         sys._getframe().f_code.co_name,
+                                                                                         repr(v)))
 
     def run_print(self, sobj, args, depth=0):
         logger = self._logger
@@ -338,7 +352,7 @@ class TinyEngine:
                                                                                 sys._getframe().f_code.co_name,
                                                                                 repr(k)))
                     sub_sobj = v
-                    self.execute_script(sub_sobj, args, depth + 1)
+                    self.execute_script(sub_sobj, args, depth + 1)  # TODO Need returned value
                 else:
                     logger.info("[{}][{}] {} is not a sub script list!".format(self.__class__.__name__,
                                                                                sys._getframe().f_code.co_name, repr(k)))
